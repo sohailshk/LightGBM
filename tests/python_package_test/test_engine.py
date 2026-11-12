@@ -2473,6 +2473,43 @@ def test_monotone_constraints(test_with_categorical_variable):
 
 
 @pytest.mark.skipif(BuildInfo.has_cuda, reason="Monotone constraints are not yet supported by CUDA version")
+@pytest.mark.parametrize("monotone_constraints_method", ["basic", "intermediate", "advanced"])
+def test_monotone_constraints_with_missing_values(monotone_constraints_method):
+    rng = np.random.default_rng(2)
+    n = 1000
+    X = rng.uniform(size=(n, 3))
+    y = 2.0 * X[:, 0] - 1.5 * X[:, 1] + np.sin(8.0 * X[:, 2]) + rng.normal(scale=0.2, size=n)
+    # missing values in every feature, the constrained ones included
+    for feature in range(3):
+        X[rng.uniform(size=n) < 0.15, feature] = np.nan
+    params = {
+        "objective": "regression",
+        "num_leaves": 31,
+        "min_data_in_leaf": 5,
+        "monotone_constraints": [1, -1, 0],
+        "monotone_constraints_method": monotone_constraints_method,
+        "num_threads": 1,
+        "seed": 1,
+        "verbosity": -1,
+    }
+    bst = lgb.train(params, lgb.Dataset(X, label=y), num_boost_round=10)
+
+    # move along each constrained feature, holding the other two fixed (including at NaN)
+    grid = np.linspace(0.005, 1.0, 101)
+    fixed_values = [*np.linspace(0.01, 1.0, 6), np.nan]
+    for feature, direction in [(0, 1.0), (1, -1.0)]:
+        other_features = [f for f in range(3) if f != feature]
+        for a in fixed_values:
+            for b in fixed_values:
+                X_grid = np.empty((len(grid), 3))
+                X_grid[:, other_features[0]] = a
+                X_grid[:, other_features[1]] = b
+                X_grid[:, feature] = grid
+                preds = bst.predict(X_grid)
+                assert (direction * np.diff(preds) >= -1e-12).all(), (feature, a, b)
+
+
+@pytest.mark.skipif(BuildInfo.has_cuda, reason="Monotone constraints are not yet supported by CUDA version")
 def test_monotone_penalty():
     def are_first_splits_non_monotone(tree, n, monotone_constraints):
         if n <= 0:

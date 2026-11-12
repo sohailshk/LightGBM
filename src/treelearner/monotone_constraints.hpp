@@ -589,6 +589,13 @@ class IntermediateLeafConstraints : public BasicLeafConstraints {
     return leaves_to_update_;
   }
 
+  // rows with a missing value go to the default child of a split whatever their
+  // bin is, so the threshold of such a split says nothing about which leaves
+  // are contiguous or which bins a child covers
+  bool ThresholdSeparatesChildren(int node_idx) const {
+    return tree_->missing_type(node_idx) == MissingType::None;
+  }
+
   bool OppositeChildShouldBeUpdated(
       bool is_split_numerical,
       const std::vector<int>& features_of_splits_going_up_from_original_leaf,
@@ -685,7 +692,9 @@ class IntermediateLeafConstraints : public BasicLeafConstraints {
         thresholds_of_splits_going_up_from_original_leaf->push_back(
             tree_->threshold_in_bin(parent_idx));
         features_of_splits_going_up_from_original_leaf->push_back(
-            tree_->split_feature_inner(parent_idx));
+            ThresholdSeparatesChildren(parent_idx)
+                ? tree_->split_feature_inner(parent_idx)
+                : -1);
       }
 
       // since current node is not the root, keep going up
@@ -771,7 +780,8 @@ class IntermediateLeafConstraints : public BasicLeafConstraints {
       // then depending on the threshold,
       // the current left child may not be contiguous with the original right leaf,
       // or the current right child may not be contiguous with the original left leaf
-      if (is_split_numerical && inner_feature == split_feature) {
+      if (is_split_numerical && ThresholdSeparatesChildren(node_idx) &&
+          inner_feature == split_feature) {
         if (threshold >= split_threshold) {
           use_left_leaf_for_update_right = false;
         }
@@ -1046,9 +1056,10 @@ class AdvancedLeafConstraints : public IntermediateLeafConstraints {
           (left_right_contain_relevant_information.first ||
            !keep_going_left_right.second)) {
         // update thresholds based on going left
-        uint32_t new_it_end = split_feature_is_inner_feature
-                                  ? std::min(threshold + 1, it_end)
-                                  : it_end;
+        uint32_t new_it_end =
+            split_feature_is_inner_feature && ThresholdSeparatesChildren(node_idx)
+                ? std::min(threshold + 1, it_end)
+                : it_end;
         GoDownToFindConstrainingLeaves(
             feature_for_constraint, root_monotone_feature,
             tree_->left_child(node_idx), min_constraints_to_be_updated,
@@ -1062,9 +1073,10 @@ class AdvancedLeafConstraints : public IntermediateLeafConstraints {
           (left_right_contain_relevant_information.second ||
            !keep_going_left_right.first)) {
         // update thresholds based on going right
-        uint32_t new_it_start = split_feature_is_inner_feature
-                                    ? std::max(threshold + 1, it_start)
-                                    : it_start;
+        uint32_t new_it_start =
+            split_feature_is_inner_feature && ThresholdSeparatesChildren(node_idx)
+                ? std::max(threshold + 1, it_start)
+                : it_start;
         GoDownToFindConstrainingLeaves(
             feature_for_constraint, root_monotone_feature,
             tree_->right_child(node_idx), min_constraints_to_be_updated,
@@ -1102,7 +1114,8 @@ class AdvancedLeafConstraints : public IntermediateLeafConstraints {
       // by going up, more information about the position of the
       // original leaf are gathered so the starting and ending
       // thresholds can be updated, which will save some time later
-      if ((feature_for_constraint == inner_feature) && is_split_numerical) {
+      if ((feature_for_constraint == inner_feature) && is_split_numerical &&
+          ThresholdSeparatesChildren(parent_idx)) {
         if (is_in_right_child) {
           it_start = std::max(threshold, it_start);
         } else {
@@ -1156,7 +1169,8 @@ class AdvancedLeafConstraints : public IntermediateLeafConstraints {
         // so the variables associated with the split need to be recorded
         was_original_leaf_right_child_of_split->push_back(is_in_right_child);
         thresholds_of_splits_going_up_from_original_leaf->push_back(threshold);
-        features_of_splits_going_up_from_original_leaf->push_back(inner_feature);
+        features_of_splits_going_up_from_original_leaf->push_back(
+            ThresholdSeparatesChildren(parent_idx) ? inner_feature : -1);
       }
 
       // since current node is not the root, keep going up

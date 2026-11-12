@@ -171,6 +171,10 @@ class Tree {
     return !GetDecisionType(decision_type_[node_idx], kCategoricalMask);
   }
 
+  inline int8_t missing_type(int node_idx) const {
+    return GetMissingType(decision_type_[node_idx]);
+  }
+
   inline int left_child(int node_idx) const { return left_child_[node_idx]; }
 
   inline int right_child(int node_idx) const { return right_child_[node_idx]; }
