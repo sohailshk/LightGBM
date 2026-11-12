@@ -774,7 +774,10 @@ class LGBMModel(_LGBMModelBase):
         params.pop("n_estimators", None)
         params.pop("class_weight", None)
 
-        if isinstance(params["random_state"], np.random.RandomState):
+        if stage == "predict" and isinstance(params["random_state"], (np.random.RandomState, np.random.Generator)):
+            # the seed has no effect on prediction, so don't draw from (and advance) the user's RNG
+            params.pop("random_state")
+        elif isinstance(params["random_state"], np.random.RandomState):
             params["random_state"] = params["random_state"].randint(np.iinfo(np.int32).max)
         elif isinstance(params["random_state"], np.random.Generator):
             params["random_state"] = int(params["random_state"].integers(np.iinfo(np.int32).max))

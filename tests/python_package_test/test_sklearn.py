@@ -787,6 +787,27 @@ def test_random_state_object(rng_constructor):
     assert df1 != df3
 
 
+@pytest.mark.parametrize("rng_constructor", [np.random.RandomState, np.random.default_rng])
+def test_predict_does_not_advance_random_state_object(rng_constructor):
+    X, y = load_iris(return_X_y=True)
+    params = {"n_estimators": 10, "subsample": 0.5, "subsample_freq": 1, "colsample_bytree": 0.5, "n_jobs": 1}
+
+    # fit() twice in a row with a shared random state object
+    clf1 = lgb.LGBMClassifier(**params, random_state=rng_constructor(123))
+    clf1.fit(X, y)
+    clf1.fit(X, y)
+
+    # same, but with predict() calls in between: they must not consume random numbers
+    clf2 = lgb.LGBMClassifier(**params, random_state=rng_constructor(123))
+    clf2.fit(X, y)
+    clf2.predict(X)
+    clf2.predict_proba(X)
+    clf2.fit(X, y)
+
+    assert clf1.booster_.model_to_string(num_iteration=0) == clf2.booster_.model_to_string(num_iteration=0)
+    np.testing.assert_allclose(clf1.predict(X, raw_score=True), clf2.predict(X, raw_score=True))
+
+
 def test_feature_importances_single_leaf():
     data = load_iris(return_X_y=False)
     clf = lgb.LGBMClassifier(n_estimators=10)
